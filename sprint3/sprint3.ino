@@ -55,12 +55,12 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("\n");
 
   if(strcmp(msg, "1")==0){
-    Serial.print("Je turn on\n");
+    setOn();
     on = true;
   }
 
   if(strcmp(msg, "0")==0){
-    Serial.print("Je turn off\n");
+    setOff();
     on = false;
   }
 }
@@ -73,9 +73,9 @@ void reconnect() {
     if (client.connect("ESP32Client", mqtt_user, mqtt_password)) {
       Serial.println("connected");
       // Once connected, publish an announcement...
-      client.publish("DATA", "hello world");
+      client.publish("INIT_ESP", "hello world");
       // ... and resubscribe
-      client.subscribe("CONTROL");
+      client.subscribe("CONTROL/ONOFF");
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -117,17 +117,26 @@ void loop() {
     on = !on;// Inverser l'état de l'interrupteur
     Serial.print("Etat de l'interrupteur : ");
     Serial.println(on ? "ON" : "OFF");
+    if(on == 1){
+      setOn();
+    }
+    else{
+      setOff();
+    }
     delay(500);
   }
+}
 
-  //Gestion allumage
-  if(on == 1){
-    digitalWrite(LED, HIGH);
-    digitalWrite(VENT, HIGH);
-  }
-  else{
-    digitalWrite(LED, LOW);
-    digitalWrite(VENT, LOW);
-  }
+void setOn(){
+  Serial.print("Je turn on\n");
+  digitalWrite(LED, HIGH);
+  digitalWrite(VENT, HIGH);
+  client.publish("CONTROL/ACK", "1");
+}
 
+void setOff(){
+  Serial.print("Je turn off\n");
+  digitalWrite(LED, LOW);
+  digitalWrite(VENT, LOW);
+  client.publish("CONTROL/ACK", "0");
 }
