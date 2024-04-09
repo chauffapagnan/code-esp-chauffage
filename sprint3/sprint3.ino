@@ -1,10 +1,14 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <WiFiClientSecure.h>
+#include <math.h>
 
 #define LED 2
 #define ON 4
 #define VENT 5
+
+#define TIN 33
+#define TOUT 19
 
 // Paramètres WiFi
 const char* ssid = "Pixel_2035";
@@ -22,6 +26,10 @@ WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
 bool on = false;
+
+//temp
+const float B = 4275.0;
+const float R0 = 100000.0;
 
 void setup_wifi() {
   delay(10);
@@ -100,6 +108,9 @@ void setup() {
   pinMode(LED, OUTPUT);
   pinMode(ON, INPUT_PULLUP);
   pinMode(VENT, OUTPUT);
+
+  pinMode(TIN, INPUT);
+  pinMode(TOUT, INPUT);
 }
 
 void loop() {
@@ -125,6 +136,20 @@ void loop() {
     }
     delay(500);
   }
+
+  // Gestion température
+  float tin = analogRead(TIN);
+  //Serial.print("Valeur TIN : ");
+  //Serial.println(tin);
+  /*
+  float volt = ((float)(tin) * (3.3 / 4095.0));
+  Serial.print("Valeur TEMP : ");
+  */
+  float R = 4095.0/tin-1.0;
+  R = R0*R;
+  float temperature = 1.0/(log(R/R0)/B+1/298.15)-273.15; // convert to temperature via datasheet
+  Serial.print(temperature);
+  Serial.println(" °C");
 }
 
 void setOn(){
