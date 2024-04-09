@@ -2,6 +2,8 @@
 #include <PubSubClient.h>
 #include <WiFiClientSecure.h>
 #include <math.h>
+#include <iostream>
+#include <string> // Pour std::string, std::to_string
 
 #define LED 2
 #define ON 4
@@ -31,6 +33,9 @@ bool on = false;
 const float B = 4275.0;
 const float R0 = 100000.0;
 
+float temp_p = 0.0;
+bool automatic = false; //gère si notre chauffage fonctionne en mode automatique ou manuel
+
 void setup_wifi() {
   delay(10);
   // Connexion au réseau WiFi
@@ -53,23 +58,35 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print(topic);
   Serial.print("] ");
 
+  //transforme le message en string
   char msg[length];
   for (int i = 0; i < length; i++) { 
     msg[i] = (char) payload[i];
   } 
   msg[length] = '\0';
-
   Serial.print(msg);
   Serial.print("\n");
 
-  if(strcmp(msg, "1")==0){
-    setOn();
-    on = true;
+  if(strcmp(topic, "CONTROL/ONOFF")==0){
+    //comparaison pour savoir si on allume ou éteint
+    automatic = false;
+    if(strcmp(msg, "1")==0){
+      setOn();
+      on = true;
+    }
+    if(strcmp(msg, "0")==0){
+      setOff();
+      on = false;
+    }
   }
-
-  if(strcmp(msg, "0")==0){
-    setOff();
-    on = false;
+  else if(strcmp(topic, "CONTROL/TEMP")==0){
+    try{
+      float t = std::stof(msg);
+      setTemp(t);
+    }
+    catch (const std::invalid_argument& e){
+      Serial.println("Erreur : entrée invalide");
+    }
   }
 }
 
@@ -84,6 +101,7 @@ void reconnect() {
       client.publish("INIT_ESP", "hello world");
       // ... and resubscribe
       client.subscribe("CONTROL/ONOFF");
+      client.subscribe("CONTROL/TEMP");
     } else {
       Serial.print("failed, rc=");
       Serial.print(client.state());
@@ -125,7 +143,7 @@ void loop() {
   
   //Gestion allumage manuel
   if (digitalRead(ON) == LOW) {// Si le bouton est enfoncé (bas)
-    on = !on;// Inverser l'état de l'interrupteur
+    automatic = false;
     Serial.print("Etat de l'interrupteur : ");
     Serial.println(on ? "ON" : "OFF");
     if(on == 1){
@@ -137,22 +155,14 @@ void loop() {
     delay(500);
   }
 
-  // Gestion température
-  float tin = analogRead(TIN);
-  //Serial.print("Valeur TIN : ");
-  //Serial.println(tin);
-  /*
-  float volt = ((float)(tin) * (3.3 / 4095.0));
-  Serial.print("Valeur TEMP : ");
-  */
-  float R = 4095.0/tin-1.0;
-  R = R0*R;
-  float temperature = 1.0/(log(R/R0)/B+1/298.15)-273.15; // convert to temperature via datasheet
-  Serial.print(temperature);
-  Serial.println(" °C");
+  if(automatic == 1){
+    checkTemp();
+  }
+
 }
 
 void setOn(){
+  on = true;
   Serial.print("Je turn on\n");
   digitalWrite(LED, HIGH);
   digitalWrite(VENT, HIGH);
@@ -160,8 +170,35 @@ void setOn(){
 }
 
 void setOff(){
+  on = false;
   Serial.print("Je turn off\n");
   digitalWrite(LED, LOW);
   digitalWrite(VENT, LOW);
   client.publish("CONTROL/ACK", "0");
+}
+
+//Automatique
+void setTemp(float t){
+  automatic = true;
+  temp_p = static_cast<int>(t * 10) / 10.0;
+  Serial.print("Je mets la temp_p à ");
+  Serial.print(temp_p);
+  Serial.println(" °C");
+}
+
+void  checkTemp(){
+  // Gestion température
+  float tin = analogRead(TIN);
+  float R = 4095.0/tin-1.0;
+  R = R0*R;
+  float temp_c = 1.0/(log(R/R0)/B+1/298.15)-273.15; // convert to temperature via datasheet
+
+  //Gestion allumage avec température
+  int delta = 0.3;
+  if(temp_c < temp_p+delta && on == 0){
+      setOn();
+  }
+  else if(temp_c > temp_p && on == 1){ //à voir si on rajoute -delta
+    setOff();
+  }
 }
