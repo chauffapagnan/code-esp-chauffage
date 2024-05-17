@@ -5,12 +5,30 @@
 #include <iostream>
 #include <string> // Pour std::string, std::to_string
 
+#include <DHT.h>
+#include <SPI.h>
+
+//LCD
+#include <Wire.h>
+#include "rgb_lcd.h"
+
+rgb_lcd lcd;
+
+const int colorR = 0;
+const int colorG = 255;
+const int colorB = 0;
+
 #define LED 2
 #define ON 4
 #define VENT 5
 
-#define TIN 33
-#define TOUT 19
+#define TIN 33 //Sensor v1.2
+#define TOUT 32 //DHT22
+#define DHTTYPE DHT22
+
+DHT dht(TOUT, DHTTYPE);
+
+//CONSTANTES CALCUL ENERGIE
 
 // Paramètres WiFi
 const char* ssid = "Pixel_2035";
@@ -29,12 +47,14 @@ PubSubClient client(espClient);
 
 bool on = false;
 
-//temp
+//tempin
 const float B = 4275.0;
 const float R0 = 100000.0;
 
 float temp_p = 0.0;
 bool automatic = false; //gère si notre chauffage fonctionne en mode automatique ou manuel
+
+//tempout
 
 void setup_wifi() {
   delay(10);
@@ -51,43 +71,6 @@ void setup_wifi() {
   Serial.println("WiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
-}
-
-void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-
-  //transforme le message en string
-  char msg[length];
-  for (int i = 0; i < length; i++) { 
-    msg[i] = (char) payload[i];
-  } 
-  msg[length] = '\0';
-  Serial.print(msg);
-  Serial.print("\n");
-
-  if(strcmp(topic, "CONTROL/ONOFF")==0){
-    //comparaison pour savoir si on allume ou éteint
-    automatic = false;
-    if(strcmp(msg, "1")==0){
-      setOn();
-      on = true;
-    }
-    if(strcmp(msg, "0")==0){
-      setOff();
-      on = false;
-    }
-  }
-  else if(strcmp(topic, "CONTROL/TEMP")==0){
-    try{
-      float t = std::stof(msg);
-      setTemp(t);
-    }
-    catch (const std::invalid_argument& e){
-      Serial.println("Erreur : entrée invalide");
-    }
-  }
 }
 
 void reconnect() {
@@ -112,6 +95,44 @@ void reconnect() {
   }
 }
 
+//--------------------------------------------------------------------------------------------------------------------------------------------
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+
+  //transforme le message en string
+  char msg[length];
+  for (int i = 0; i < length; i++) { 
+    msg[i] = (char) payload[i];
+  } 
+  msg[length] = '\0';
+  Serial.print(msg);
+  Serial.print("\n");
+
+  if(strcmp(topic, "CONTROL/ONOFF")==0){
+    //comparaison pour savoir si on allume ou éteint
+    automatic = false;
+    if(strcmp(msg, "1")==0){
+      setOn();
+    }
+    if(strcmp(msg, "0")==0){
+      setOff();
+    }
+  }
+  else if(strcmp(topic, "CONTROL/TEMP")==0){
+    try{
+      float t = std::stof(msg);
+      setTemp(t);
+    }
+    catch (const std::invalid_argument& e){
+      Serial.println("Erreur : entrée invalide");
+    }
+  }
+}
+
+
 void setup() {
   Serial.begin(115200);
   setup_wifi();
@@ -128,11 +149,19 @@ void setup() {
   pinMode(VENT, OUTPUT);
 
   pinMode(TIN, INPUT);
-  pinMode(TOUT, INPUT);
+  //pinMode(TOUT, INPUT);
+  dht.begin();
+
+  // set up the LCD's number of columns and rows:
+  //lcd.begin(16, 2);
+    
+  //lcd.setRGB(colorR, colorG, colorB);
+  //lcd.setCursor(0, 0);
+  // Print a message to the LCD.
+  //lcd.print("hello, world!");
 }
 
 void loop() {
-
   //Gestion des messages
   if (!client.connected()) {
     reconnect();
@@ -142,15 +171,15 @@ void loop() {
   //Serial.println(digitalRead(ON));
   
   //Gestion allumage manuel
-  if (digitalRead(ON) == LOW) {// Si le bouton est enfoncé (bas)
+  if (digitalRead(ON) == LOW){// Si le bouton est enfoncé (bas)
     automatic = false;
     Serial.print("Etat de l'interrupteur : ");
     Serial.println(on ? "ON" : "OFF");
     if(on == 1){
-      setOn();
+      setOff();
     }
     else{
-      setOff();
+      setOn();
     }
     delay(500);
   }
@@ -184,6 +213,12 @@ void setTemp(float t){
   Serial.print("Je mets la temp_p à ");
   Serial.print(temp_p);
   Serial.println(" °C");
+
+  char buffer[10]; // Définir une taille suffisante pour contenir votre nombre avec sa partie décimale
+
+  // Utiliser dtostrf() pour convertir le float en string
+  dtostrf(temp_p, 3, 1, buffer); // 6 : largeur totale, 2 : nombre de décimales
+  client.publish("DATA/TEMP-TARGET", buffer);
 }
 
 void  checkTemp(){
@@ -194,11 +229,27 @@ void  checkTemp(){
   float temp_c = 1.0/(log(R/R0)/B+1/298.15)-273.15; // convert to temperature via datasheet
 
   //Gestion allumage avec température
-  int delta = 0.3;
-  if(temp_c < temp_p+delta && on == 0){
-      setOn();
+  int delta = 2;
+  if(temp_c < temp_p && on == 0){
+    setOn();
   }
-  else if(temp_c > temp_p && on == 1){ //à voir si on rajoute -delta
+  else if(temp_c > temp_p + delta && on == 1){ //à voir si on rajoute -delta
     setOff();
   }
+
+  Serial.print("temp_c à ");
+  Serial.print(temp_c);
+  Serial.print(" °C  -  ");
+
+
+  /* CODE LM35
+  //temp_o
+  float tout = analogRead(TOUT);
+  float temp_o = tout * 3.3/40.96;
+  */
+  delay(2000);
+  float temp_o = dht.readTemperature();
+  Serial.print("temp_o à ");
+  Serial.print(temp_o);
+  Serial.println(" °C");
 }
