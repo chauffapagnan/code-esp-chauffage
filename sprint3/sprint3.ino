@@ -29,6 +29,8 @@ const int colorB = 0;
 DHT dht(TOUT, DHTTYPE);
 
 //CONSTANTES CALCUL ENERGIE
+#define CAPA_THERMIQUE_AIR 1005
+#define DEBIT_AIR 0.0218
 
 // Paramètres WiFi
 const char* ssid = "Pixel_2035";
