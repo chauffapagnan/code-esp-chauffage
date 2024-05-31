@@ -5,7 +5,7 @@
 #include <iostream>
 #include <string> // Pour std::string, std::to_string
 
-#include <DHT.h>
+//#include <DHT.h>
 #include <SPI.h>
 
 //LCD
@@ -23,10 +23,12 @@ const int colorB = 0;
 #define VENT 5
 
 #define TIN 33 //Sensor v1.2
-#define TOUT 32 //DHT22
-#define DHTTYPE DHT22
+#define TOUT 32 //LM35
+//#define DHTTYPE DHT22
 
-DHT dht(TOUT, DHTTYPE);
+
+
+//DHT dht(TOUT, DHTTYPE, 15);
 
 //CONSTANTES CALCUL ENERGIE
 #define CAPA_THERMIQUE_AIR 1005
@@ -151,8 +153,8 @@ void setup() {
   pinMode(VENT, OUTPUT);
 
   pinMode(TIN, INPUT);
-  //pinMode(TOUT, INPUT);
-  dht.begin();
+  pinMode(TOUT, INPUT);
+  //dht.begin();
 
   // set up the LCD's number of columns and rows:
   //lcd.begin(16, 2);
@@ -175,7 +177,7 @@ void loop() {
   //Gestion allumage manuel
   if (digitalRead(ON) == LOW){// Si le bouton est enfoncé (bas)
     automatic = false;
-    Serial.print("Etat de l'interrupteur : ");
+    Serial.print("ALLUMAGE MANUEL : ");
     Serial.println(on ? "ON" : "OFF");
     if(on == 1){
       setOff();
@@ -194,7 +196,7 @@ void loop() {
 
 void setOn(){
   on = true;
-  Serial.print("Je turn on\n");
+  Serial.print("JE M'ALLUME\n");
   digitalWrite(LED, HIGH);
   digitalWrite(VENT, HIGH);
   client.publish("CONTROL/ACK", "1");
@@ -202,7 +204,7 @@ void setOn(){
 
 void setOff(){
   on = false;
-  Serial.print("Je turn off\n");
+  Serial.print("JE M'ÉTEINT\n");
   digitalWrite(LED, LOW);
   digitalWrite(VENT, LOW);
   client.publish("CONTROL/ACK", "0");
@@ -214,7 +216,7 @@ void setTemp(float t){
   temp_p = static_cast<int>(t * 10) / 10.0;
   Serial.print("Je mets la temp_p à ");
   Serial.print(temp_p);
-  Serial.println(" °C");
+  Serial.println(" °C"); 
 
   char buffer[10]; // Définir une taille suffisante pour contenir votre nombre avec sa partie décimale
 
@@ -228,30 +230,44 @@ void  checkTemp(){
   float tin = analogRead(TIN);
   float R = 4095.0/tin-1.0;
   R = R0*R;
-  float temp_c = 1.0/(log(R/R0)/B+1/298.15)-273.15; // convert to temperature via datasheet
+  float temp_i = 1.0/(log(R/R0)/B+1/298.15)-273.15; // convert to temperature via datasheet
 
-  //Gestion allumage avec température
-  int delta = 2;
-  if(temp_c < temp_p && on == 0){
-    setOn();
-  }
-  else if(temp_c > temp_p + delta && on == 1){ //à voir si on rajoute -delta
-    setOff();
-  }
+  Serial.print("temp_i à ");
+  Serial.print(temp_i);
+  Serial.print(" °C - ");
 
-  Serial.print("temp_c à ");
-  Serial.print(temp_c);
-  Serial.print(" °C  -  ");
+  delay(500);
 
-
-  /* CODE LM35
+  //CODE LM35
   //temp_o
   float tout = analogRead(TOUT);
-  float temp_o = tout * 3.3/40.96;
-  */
-  delay(2000);
-  float temp_o = dht.readTemperature();
+  // convert the ADC value to voltage in millivolt
+  float milliVolt = tout * (3300.0 / 4096.0);
+  // convert the voltage to the temperature in °C
+  float temp_o = (milliVolt / 10) + 10;
+
+  //CODE DHT22
+  //delay(2000);
+  
+  //float temp_o = dht.readTemperature();
   Serial.print("temp_o à ");
   Serial.print(temp_o);
   Serial.println(" °C");
+
+  
+  //Gestion allumage avec température
+  int delta = 1;
+  if(temp_i < temp_p && temp_o > temp_i + delta && on == 0){ //température intérieure pas assez chaude et tempéraute exterieure assez chaude
+    setOn();
+  }
+  else if(on == 1){ //à voir si on rajoute -delta
+    if(temp_i > temp_p + delta){ //trop chaud dedans, on éteint le chauffage
+      Serial.println("Température atteinte, plus besoin de chauffer");
+      setOff();
+    }
+    if(temp_o + delta <= temp_i){ //trop froid pour chauffer, on éteint le chauffage
+      Serial.println("Il fait trop froid dehors pour chauffer");
+      setOff();
+    }
+  }
 }
